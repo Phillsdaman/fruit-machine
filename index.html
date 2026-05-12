@@ -88,23 +88,49 @@
     </div>
 
     <script>
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let audioCtx = null;
+        let iosUnlocked = false;
+
+        // iOS Safari: route audio through media channel so it plays even with
+        // the silent/ringer switch on. A silent <audio> element does the trick.
+        const silentAudio = new Audio(
+            "data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA" +
+            "gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIA" +
+            "AAA8TEFNRTMuMTAwAc0AAAAAAAAAABSAJAJAQgAAgAAAAnGMHkkIAAAAAAD/+xDEAAPH" +
+            "//////////////////////////////////////////////////////////////////8="
+        );
+        silentAudio.loop = true;
+        silentAudio.setAttribute('playsinline', 'true');
+
+        function ensureAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (!iosUnlocked) {
+                silentAudio.play().catch(() => {});
+                iosUnlocked = true;
+            }
+            return audioCtx.state === 'running'
+                ? Promise.resolve()
+                : audioCtx.resume();
+        }
 
         function playTone(freq, type, duration, startTime, volume = 0.1) {
+            const t = Math.max(audioCtx.currentTime, startTime);
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.type = type;
-            osc.frequency.setValueAtTime(freq, startTime);
-            gain.gain.setValueAtTime(volume, startTime);
-            gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+            osc.frequency.setValueAtTime(freq, t);
+            gain.gain.setValueAtTime(volume, t);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
             osc.connect(gain);
             gain.connect(audioCtx.destination);
-            osc.start(startTime);
-            osc.stop(startTime + duration);
+            osc.start(t);
+            osc.stop(t + duration);
         }
 
         async function pullLever() {
-            if (audioCtx.state === 'suspended') audioCtx.resume();
+            await ensureAudio();
 
             const btn = document.getElementById('lever');
             const statusText = document.getElementById('status');
